@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plants vs. Zombies</title>
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}body{display:flex;align-items:center;justify-content:center}#wrap{position:relative}#canvas{display:block;outline:0}#loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font:700 32px system-ui;background:#000;z-index:5}#fs{position:fixed;right:12px;bottom:12px;z-index:10;padding:9px 13px;background:#111;color:#fff;border:1px solid #777;border-radius:8px;cursor:pointer}</style>
+</head>
+<body>
+<div id="loading">LOADING...</div>
+<div id="wrap"><canvas id="canvas" width="800" height="600" tabindex="0"></canvas></div>
+<button id="fs">Fullscreen</button>
+<textarea id="pvz-soft-keyboard" style="position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;font-size:16px" autocapitalize="off" autocomplete="off" autocorrect="off" enterkeyhint="done" spellcheck="false"></textarea>
+<script>
+let readyResolve,readyReject; window.moduleReadyPromise=new Promise((r,j)=>{readyResolve=r;readyReject=j});
+var Module={canvas:document.getElementById('canvas'),noInitialRun:true,onRuntimeInitialized:readyResolve,onAbort:readyReject,print:console.log,printErr:console.warn,locateFile:(path)=>path};
+</script>
+<script>
+(async()=>{
+ const loading=document.getElementById('loading'), c=document.getElementById('canvas');
+ const files=[['main.pak','main.pak'],['properties/Layout.xml','properties/Layout.xml'],['properties/default.xml','properties/default.xml'],['properties/partner.xml','properties/partner.xml'],['properties/partner.xml.sig','properties/partner.xml.sig'],['properties/partner_logo.jpg','properties/partner_logo.jpg']];
+ try{
+   loading.textContent='Loading game data...';
+   // Fetch data before starting the Emscripten runtime.
+   // GitHub Pages serves these files over HTTPS, so pvz.wasm can be fetched normally.
+   const data=await Promise.all(files.map(async([src,dst])=>[dst,new Uint8Array(await (await fetch(src)).arrayBuffer())]));
+   let s=document.createElement('script'); s.src='pvz.js'; document.body.appendChild(s);
+   await moduleReadyPromise;
+   for(const [dst,bytes] of data){let ps=dst.split('/'),dir='/';for(let i=0;i<ps.length-1;i++){dir+=(dir==='/'?'':'/')+ps[i];try{Module.FS.mkdir(dir)}catch(e){}}Module.FS.writeFile('/'+dst,bytes)}
+   try{Module.FS.mkdir('/saves')}catch(e){}
+   try{Module.FS.mount(Module.FS.filesystems.IDBFS,{},'/saves')}catch(e){}
+   await new Promise(r=>Module.FS.syncfs(true,r));
+   const resize=()=>{const x=Math.min(innerWidth/800,innerHeight/600);c.style.width=x*800+'px';c.style.height=x*600+'px'}; resize(); addEventListener('resize',resize);addEventListener('fullscreenchange',resize);
+   const sync=()=>Module.FS.syncfs(false,()=>{});setInterval(sync,5000);addEventListener('pagehide',sync);addEventListener('visibilitychange',()=>document.hidden&&sync());
+   loading.remove(); c.focus(); Module.callMain([]);
+ }catch(e){loading.textContent='Failed to load: '+(e?.message||e);console.error(e)}
+})();
+document.getElementById('fs').onclick=()=>document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();
+</script>
+</body></html>
