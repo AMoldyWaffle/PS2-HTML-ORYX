@@ -41,29 +41,36 @@ html,body{
 (function(){
 
     /*
-     * Everything is relative to:
-     *
-     * Trombone Champ/
-     *
-     * This is important because the game will be
-     * hosted by GitHub Pages.
+     * Build files come from the same Trombone Champ folder.
      */
-
-    var ROOT = "./";
     var BUILD = "./Build/";
 
+
     /*
-     * Split files.
+     * StreamingAssets MUST come from raw GitHub.
+     *
+     * This is an absolute URL.
+     */
+    var STREAMING =
+        "https://raw.githubusercontent.com/" +
+        "AMoldyWaffle/PS2-HTML-ORYX/main/" +
+        "Trombone%20Champ/StreamingAssets/";
+
+
+    /*
+     * Split Unity files.
      */
     var CHUNKED = {
         "web.data.unityweb": 6,
         "web.wasm.code.unityweb": 4
     };
 
+
     var blobUrls = {};
 
+
     /*
-     * Download a binary file.
+     * Download binary data.
      */
     function download(url){
 
@@ -77,36 +84,47 @@ html,body{
                     " while loading " +
                     url
                 );
+
             }
 
             return response.arrayBuffer();
+
         });
+
     }
 
+
     /*
-     * Get the URL of a split part.
+     * Get split-file URL.
      */
     function getPartURL(name,index){
 
         return BUILD +
             name +
             (index < 10 ? "0" + index : index);
+
     }
 
+
     /*
-     * Combine all chunks into one Blob.
+     * Combine split files.
      */
     function combine(name,count){
 
-        var requests = [];
+        var requests=[];
 
-        for(var i=0;i<count;i++){
+        for(
+            var i=0;
+            i<count;
+            i++
+        ){
 
             requests.push(
                 download(
                     getPartURL(name,i)
                 )
             );
+
         }
 
         return Promise.all(requests)
@@ -116,18 +134,30 @@ html,body{
                 new Blob(
                     parts,
                     {
-                        type:
-                            "application/octet-stream"
+                        type:"application/octet-stream"
                     }
                 )
             );
 
         });
+
     }
 
+
     /*
-     * Convert Unity's requests for the split
-     * files into the reconstructed Blob URLs.
+     * =====================================================
+     * URL REWRITER
+     * =====================================================
+     *
+     * This is the important part.
+     *
+     * We don't use ROOT anymore.
+     *
+     * ANY URL containing:
+     *
+     *     StreamingAssets/
+     *
+     * is converted directly to raw GitHub.
      */
     function rewrite(url){
 
@@ -135,8 +165,9 @@ html,body{
             return url;
         }
 
+
         /*
-         * Main data file.
+         * Split data file.
          */
         if(
             url.indexOf(
@@ -153,11 +184,14 @@ html,body{
                 return blobUrls[
                     "web.data.unityweb"
                 ];
+
             }
+
         }
 
+
         /*
-         * WASM code.
+         * Split WASM.
          */
         if(
             url.indexOf(
@@ -174,11 +208,14 @@ html,body{
                 return blobUrls[
                     "web.wasm.code.unityweb"
                 ];
+
             }
+
         }
 
+
         /*
-         * Framework is not split.
+         * Framework.
          */
         if(
             url.indexOf(
@@ -188,11 +225,17 @@ html,body{
 
             return BUILD +
                 "web.wasm.framework.unityweb";
+
         }
 
+
         /*
-         * Keep StreamingAssets on the same
-         * GitHub Pages origin.
+         * =================================================
+         * STREAMING ASSETS
+         * =================================================
+         *
+         * Find the StreamingAssets portion regardless of
+         * what origin Unity has already attached.
          */
         var marker =
             "StreamingAssets/";
@@ -200,20 +243,42 @@ html,body{
         var pos =
             url.indexOf(marker);
 
+
         if(pos !== -1){
 
-            return ROOT +
-                url.substring(pos);
+            var assetPath =
+                url.substring(
+                    pos + marker.length
+                );
+
+            var result =
+                STREAMING +
+                assetPath;
+
+            console.log(
+                "[Trombone Champ] StreamingAssets:",
+                result
+            );
+
+            return result;
+
         }
 
+
         return url;
+
     }
 
+
     /*
-     * Patch XMLHttpRequest.
+     * =====================================================
+     * XMLHttpRequest interception
+     * =====================================================
      */
+
     var originalOpen =
         XMLHttpRequest.prototype.open;
+
 
     XMLHttpRequest.prototype.open =
         function(method,url){
@@ -223,84 +288,94 @@ html,body{
                     arguments
                 );
 
-            args[1] = rewrite(url);
+
+            var rewritten =
+                rewrite(url);
+
+
+            if(rewritten !== url){
+
+                console.log(
+                    "[Trombone Champ] XHR:",
+                    url,
+                    "->",
+                    rewritten
+                );
+
+            }
+
+
+            args[1]=rewritten;
+
 
             return originalOpen.apply(
                 this,
                 args
             );
+
         };
 
+
     /*
-     * Patch fetch().
+     * =====================================================
+     * fetch() interception
+     * =====================================================
      */
+
     var originalFetch =
         window.fetch;
+
 
     window.fetch =
         function(input,options){
 
             if(typeof input === "string"){
 
-                input = rewrite(input);
+                input =
+                    rewrite(input);
 
             }
+
             else if(
                 input &&
                 input.url
             ){
 
-                var newURL =
+                var rewritten =
                     rewrite(input.url);
 
-                if(newURL !== input.url){
+
+                if(
+                    rewritten !==
+                    input.url
+                ){
 
                     input =
                         new Request(
-                            newURL,
+                            rewritten,
                             input
                         );
+
                 }
+
             }
+
 
             return originalFetch.call(
                 this,
                 input,
                 options
             );
+
         };
 
-    /*
-     * Error display.
-     */
-    function showError(message){
-
-        console.error(message);
-
-        var box =
-            document.createElement("pre");
-
-        box.style.position = "fixed";
-        box.style.inset = "0";
-        box.style.margin = "0";
-        box.style.padding = "20px";
-        box.style.background = "#111";
-        box.style.color = "#ff7777";
-        box.style.font =
-            "14px monospace";
-        box.style.whiteSpace =
-            "pre-wrap";
-        box.style.overflow = "auto";
-        box.style.zIndex = "99999";
-
-        box.textContent = message;
-
-        document.body.appendChild(box);
-    }
 
     /*
-     * Reconstruct the split Unity files.
+     * =====================================================
+     * REBUILD UNITY FILES
+     * =====================================================
      */
+
     Promise.all([
 
         combine(
@@ -311,9 +386,10 @@ html,body{
 
             blobUrls[
                 "web.data.unityweb"
-            ] = url;
+            ]=url;
 
         }),
+
 
         combine(
             "web.wasm.code.unityweb",
@@ -323,24 +399,26 @@ html,body{
 
             blobUrls[
                 "web.wasm.code.unityweb"
-            ] = url;
+            ]=url;
 
         })
 
     ])
-
     .then(function(){
 
         /*
-         * Load UnityLoader from the same
-         * GitHub Pages directory.
+         * Load UnityLoader.
          */
         var script =
-            document.createElement("script");
+            document.createElement(
+                "script"
+            );
+
 
         script.src =
             BUILD +
             "UnityLoader.js";
+
 
         script.onload =
             function(){
@@ -349,7 +427,8 @@ html,body{
 
                     UnityLoader.instantiate(
                         "unityContainer",
-                        BUILD + "web.json"
+                        BUILD +
+                        "web.json"
                     );
 
                 }
@@ -364,21 +443,23 @@ html,body{
 
             };
 
+
         script.onerror =
             function(){
 
                 showError(
                     "Could not load:\n" +
-                    BUILD +
-                    "UnityLoader.js"
+                    script.src
                 );
 
             };
 
-        document.head.appendChild(script);
+
+        document.head.appendChild(
+            script
+        );
 
     })
-
     .catch(function(e){
 
         showError(
@@ -387,6 +468,42 @@ html,body{
         );
 
     });
+
+
+    /*
+     * Error display.
+     */
+    function showError(message){
+
+        console.error(message);
+
+
+        var box =
+            document.createElement(
+                "pre"
+            );
+
+
+        box.style.position="fixed";
+        box.style.inset="0";
+        box.style.margin="0";
+        box.style.padding="20px";
+        box.style.background="#111";
+        box.style.color="#ff7777";
+        box.style.font="14px monospace";
+        box.style.whiteSpace="pre-wrap";
+        box.style.overflow="auto";
+        box.style.zIndex="99999";
+
+
+        box.textContent=message;
+
+
+        document.body.appendChild(
+            box
+        );
+
+    }
 
 })();
 </script>
